@@ -1,0 +1,16 @@
+{
+    "manifest_version": 3,
+    "name": "LinkedIn n8n Auto-Filler",
+    "version": "1.0",
+    "description": "Envia perguntas do LinkedIn para o n8n e preenche as respostas.",
+    "content_scripts": [
+        {
+            "matches": [
+                "*://*.linkedin.com/*"
+            ],
+            "js": [
+                "content.js"
+            ]
+        }
+    ]
+}
