@@ -9,22 +9,62 @@ function encontrarBotaoPorTexto(texto) {
 // 2. Função para extrair dados da tela para o n8n
 function extrairPerguntasDaTela() {
     const perguntas = {};
-    const labels = document.querySelectorAll('label');
+    const areaDoFormulario = document.querySelector('.artdeco-modal') || document;
+    const labels = areaDoFormulario.querySelectorAll('label');
+
+    const textosIgnorados = [
+        'alerta de vaga',
+        'cidade, estado',
+        'pesquisar cargo',
+        'pesquisar',
+        'configurar alerta'
+    ];
 
     labels.forEach(label => {
-        const texto = label.innerText.trim();
+        let texto = label.innerText.trim();
+        const textoMin = texto.toLowerCase();
         const idCampo = label.getAttribute('for');
         
-        if (idCampo) {
+        const deveIgnorar = textosIgnorados.some(ignorado => textoMin.includes(ignorado));
+        
+        if (idCampo && !deveIgnorar && texto.length > 0) {
             const campo = document.getElementById(idCampo);
+            
+            if (idCampo.includes('search') || idCampo.includes('adToggle')) return;
+
             if (campo) {
+                // Limpa textos duplicados
+                texto = texto.split('\n')[0].trim();
+                const tipoCampo = campo.tagName.toLowerCase();
+
+                // Monta o objeto base
                 perguntas[idCampo] = {
                     pergunta: texto,
-                    tipo: campo.tagName.toLowerCase()
+                    tipo: tipoCampo
                 };
+
+                // EXTRAÇÃO DAS OPÇÕES DO SELECT
+                if (tipoCampo === 'select') {
+                    const opcoes = [];
+                    const elementosOption = campo.querySelectorAll('option');
+                    
+                    elementosOption.forEach(opt => {
+                        const valor = opt.value.trim();
+                        // Ignora opções vazias ou placeholders como "Selecione uma opção"
+                        if (valor && valor !== "Selecione uma opção" && valor !== "Select an option") {
+                            opcoes.push(valor);
+                        }
+                    });
+                    
+                    // Adiciona a lista de opções ao JSON enviado
+                    if (opcoes.length > 0) {
+                        perguntas[idCampo].opcoes_disponiveis = opcoes;
+                    }
+                }
             }
         }
     });
+    
     return perguntas;
 }
 
@@ -37,7 +77,7 @@ async function processarFormularioViaN8n() {
 
     try {
         // ⚠️ INSIRA A URL DO SEU WEBHOOK DO N8N AQUI
-        const respostaN8n = await fetch('http://192.168.1.101:5678/webhook-test/linkedin-ia', {
+        const respostaN8n = await fetch('http://192.168.1.101:5678/webhook/linkedin-ia', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ campos: perguntas })

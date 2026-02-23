@@ -3,6 +3,12 @@
     "name": "LinkedIn n8n Auto-Filler",
     "version": "1.0",
     "description": "Envia perguntas do LinkedIn para o n8n e preenche as respostas.",
+    "host_permissions": [
+        "http://localhost:5678/*",
+        "http://127.0.0.1:5678/*",
+        "https://*.linkedin.com/*",
+        "http://192.168.1.101:5678/*"
+    ],
     "content_scripts": [
         {
             "matches": [
