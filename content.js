@@ -53,7 +53,34 @@ function extrairPerguntasDaTela() {
                 };
                 return;
             }
-        } 
+        }
+        
+        // 🟢 Checkbox (Termos, Consentimento, etc)
+        if (tipoInput === 'checkbox') {
+            const fieldset = campo.closest('fieldset');
+            if (fieldset) {
+                const legend = fieldset.querySelector('legend span[aria-hidden="true"]') || fieldset.querySelector('legend');
+                if (legend) textoPergunta = legend.innerText.trim().split('\n')[0];
+            }
+
+            const labelDoCheckbox = areaDoFormulario.querySelector(`label[for="${idCampo}"]`) || campo.closest('label');
+            const textoLabel = labelDoCheckbox ? labelDoCheckbox.innerText.trim() : "";
+
+            if (!textoPergunta) {
+                textoPergunta = textoLabel;
+            } else if (textoLabel && textoPergunta.toLowerCase() !== textoLabel.toLowerCase()) {
+                textoPergunta = textoPergunta + " - Opção: " + textoLabel;
+            }
+
+            if (!textoPergunta) return;
+
+            perguntas[idCampo] = {
+                pergunta: textoPergunta,
+                tipo: "checkbox",
+                opcoes_disponiveis: ["Yes", "No"] // Força a IA a dar uma resposta afirmativa/negativa clara
+            };
+            return;
+        }
         
         // 🟢 Campos normais (Texto, Select)
         const label = areaDoFormulario.querySelector(`label[for="${idCampo}"]`);
@@ -168,7 +195,14 @@ async function processarFormularioViaN8n() {
                     continue;
                 }
 
-                if (campo.tagName.toLowerCase() === 'select') {
+                if (campo.type && campo.type.toLowerCase() === 'checkbox') {
+                    const resp = String(valorResposta).toLowerCase().trim();
+                    if (['yes', 'true', '1', 'sim', 'checked', 'marcar'].includes(resp)) {
+                        campo.checked = true;
+                    } else {
+                        campo.checked = false;
+                    }
+                } else if (campo.tagName.toLowerCase() === 'select') {
                     const option = Array.from(campo.options).find(opt => opt.innerText.trim().toLowerCase() === String(valorResposta).toLowerCase());
                     if (option) {
                         campo.value = option.value;
@@ -217,15 +251,30 @@ async function iniciarAutomacao() {
             console.log(`\n➤ Processando vaga ${i + 1} de ${cardsDeVagas.length}...`);
             const card = cardsDeVagas[i];
             
+            // Garante que nenhum modal anterior travou aberto
+            const modalAberto = document.querySelector('.artdeco-modal');
+            if (modalAberto) {
+                const btnFecharModal = document.querySelector('button[aria-label="Fechar"]') || document.querySelector('button[aria-label="Dismiss"]');
+                if (btnFecharModal) btnFecharModal.click();
+                await esperar(1000);
+                const btnDescartarModal = encontrarBotaoPorTexto('Descartar');
+                if (btnDescartarModal) btnDescartarModal.closest('button').click();
+                await esperar(1000);
+            }
+
             card.scrollIntoView({ behavior: 'smooth', block: 'center' });
             await esperar(1000); 
             
             const linkClicavel = card.querySelector('.job-card-list__title--link') || card.querySelector('a'); 
             if (linkClicavel) linkClicavel.click();
             
-            await esperar(3000); 
-
-            const btnCandidatura = document.querySelector('.jobs-apply-button');
+            // Aguarda até o botão de Candidatura aparecer
+            let btnCandidatura = null;
+            for (let j = 0; j < 5; j++) {
+                await esperar(1000);
+                btnCandidatura = document.querySelector('.jobs-apply-button');
+                if (btnCandidatura) break;
+            }
             
             if (!btnCandidatura) {
                 console.log("Botão de Candidatura Simplificada não encontrado ou você já se candidatou. Pulando.");
@@ -255,18 +304,18 @@ async function iniciarAutomacao() {
                     console.log("✅ Tela final alcançada. Candidatura pronta para envio!");
                     
                     // ⚠️ ATENÇÃO: Descomente a linha abaixo quando quiser que o bot envie de verdade
-                    // (btnEnviar.closest('button') || btnEnviar).click(); 
+                    (btnEnviar.closest('button') || btnEnviar).click(); 
                     
                     await esperar(3000);
                     formAberto = false;
                 } else {
                     tentativasSeguidasSemAvanco++;
                     console.log("Aguardando liberação do botão...");
-                    await esperar(2000);
+                    await esperar(20000);
 
                     if (tentativasSeguidasSemAvanco > 3) {
                         console.log("⚠️ Formulário exigiu intervenção manual ou travou. Fechando e pulando.");
-                        const btnFechar = document.querySelector('button[aria-label="Ignorar"]');
+                        const btnFechar = document.querySelector('button[aria-label="Fechar"]') || document.querySelector('button[aria-label="Dismiss"]');
                         if (btnFechar) btnFechar.click();
                         await esperar(1000);
                         const btnDescartar = encontrarBotaoPorTexto('Descartar');
@@ -277,8 +326,11 @@ async function iniciarAutomacao() {
                 }
             }
 
-            const btnFecharSucesso = document.querySelector('button[aria-label="Ignorar"]');
+            const btnFecharSucesso = document.querySelector('button[aria-label="Fechar"]') || document.querySelector('button[aria-label="Dismiss"]');
             if (btnFecharSucesso) btnFecharSucesso.click();
+            await esperar(1000);
+            const btnConcluido = encontrarBotaoPorTexto('Concluído') || encontrarBotaoPorTexto('Done');
+            if (btnConcluido) btnConcluido.closest('button').click();
 
             console.log(`Vaga ${i + 1} concluída. Pausando por segurança...`);
             await esperar(4000); 
