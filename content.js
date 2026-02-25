@@ -168,9 +168,7 @@ async function processarFormularioViaN8n() {
 
     while (tentativas < maxTentativas) {
         try {
-            // 🛑 FREIO DE MÃO: Pausa de 5 segundos ANTES de cada chamada para aliviar a API
-            console.log("Respirando 30 segundos para respeitar o limite da API free...");
-            await esperar(30000);
+            
 
             const resposta = await fetch(URL_WEBHOOK_N8N, {
                 method: 'POST',
@@ -494,33 +492,77 @@ function injetarPainelAutomacao() {
             <p style="margin: 0; color: #666; font-style: italic;">Clique em iniciar para carregar o bot...</p>
         </div>
         
-        <div style="padding: 14px; display: flex; gap: 12px; background: #2a2a35; border-top: 1px solid #3a3a44;">
-            <button id="btn-bot-iniciar" style="flex: 1; padding: 12px; background: #057a55; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; transition: all 0.2s;">▶ Iniciar</button>
-            <button id="btn-bot-parar" disabled style="flex: 1; padding: 12px; background: #e02424; color: white; border: none; border-radius: 6px; cursor: not-allowed; font-weight: bold; font-size: 14px; opacity: 0.5; transition: all 0.2s;">🛑 Parar</button>
+        <div style="padding: 14px; display: flex; gap: 8px; background: #2a2a35; border-top: 1px solid #3a3a44;">
+            <button id="btn-bot-testar" disabled style="flex: 1; padding: 12px 6px; background: #555; color: white; border: none; border-radius: 6px; cursor: not-allowed; font-weight: bold; font-size: 12px; opacity: 0.5; transition: all 0.2s;">🔌 Testar</button>
+            <button id="btn-bot-iniciar" disabled style="flex: 1; padding: 12px 6px; background: #555; color: white; border: none; border-radius: 6px; cursor: not-allowed; font-weight: bold; font-size: 12px; opacity: 0.5; transition: all 0.2s;">▶ Iniciar</button>
+            <button id="btn-bot-parar" disabled style="flex: 1; padding: 12px 6px; background: #e02424; color: white; border: none; border-radius: 6px; cursor: not-allowed; font-weight: bold; font-size: 12px; opacity: 0.5; transition: all 0.2s;">🛑 Parar</button>
         </div>
     `;
 
     document.body.appendChild(painel);
 
+    const btnTestar = document.getElementById('btn-bot-testar');
     const btnIniciar = document.getElementById('btn-bot-iniciar');
     const inputUrl = document.getElementById('bot-linkedin-url');
 
-    // Validação Inicial da URL para habilitar o botão de Iniciar
+    // Validação Inicial da URL para habilitar o botão de Testar
     function validarUrl() {
         if (!botExecutando) {
             const urlValue = inputUrl.value.trim();
+            btnIniciar.disabled = true;
+            btnIniciar.style.opacity = '0.4';
+            btnIniciar.style.cursor = 'not-allowed';
+            btnIniciar.style.backgroundColor = '#555';
+
             if (urlValue.startsWith('http://') || urlValue.startsWith('https://')) {
+                btnTestar.disabled = false;
+                btnTestar.style.opacity = '1';
+                btnTestar.style.cursor = 'pointer';
+                btnTestar.style.backgroundColor = '#2563eb';
+                localStorage.setItem('botLinkedIn_n8nUrl', urlValue); // Salva na memória do navegador
+            } else {
+                btnTestar.disabled = true;
+                btnTestar.style.opacity = '0.4';
+                btnTestar.style.cursor = 'not-allowed';
+                btnTestar.style.backgroundColor = '#555';
+            }
+        }
+    }
+
+    async function executarTesteConexao() {
+        const url = obterUrlN8N();
+        if (!url) return;
+        
+        logNoPainel("🔌 Disparando requisição de teste para o endpoint...", 'info');
+        btnTestar.disabled = true;
+        btnTestar.innerText = "Testando...";
+        
+        try {
+            const resposta = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ campos: { "teste_conexao": true } })
+            });
+            
+            if (resposta.ok) {
+                logNoPainel("✅ Conexão bem-sucedida! Rota ativa.", 'success');
+                btnTestar.innerText = "✓ Testado";
+                btnTestar.style.backgroundColor = '#10b981';
+                
+                // Libera o botão Iniciar
                 btnIniciar.disabled = false;
                 btnIniciar.style.opacity = '1';
                 btnIniciar.style.cursor = 'pointer';
                 btnIniciar.style.backgroundColor = '#057a55';
-                localStorage.setItem('botLinkedIn_n8nUrl', urlValue); // Salva na memória do navegador
             } else {
-                btnIniciar.disabled = true;
-                btnIniciar.style.opacity = '0.4';
-                btnIniciar.style.cursor = 'not-allowed';
-                btnIniciar.style.backgroundColor = '#555';
+                logNoPainel(`❌ Endpoint falhou: Erro HTTP ${resposta.status}`, 'error');
+                btnTestar.innerText = "🔌 Testar";
+                btnTestar.disabled = false;
             }
+        } catch (erro) {
+            logNoPainel(`❌ Falha de rede: Tente conectar o n8n ou verifique o CORS. (${erro.message})`, 'error');
+            btnTestar.innerText = "🔌 Testar";
+            btnTestar.disabled = false;
         }
     }
 
@@ -528,6 +570,7 @@ function injetarPainelAutomacao() {
     // Chama logo ao abrir para checar o valor salvo
     validarUrl();
 
+    btnTestar.addEventListener('click', executarTesteConexao);
     btnIniciar.addEventListener('click', iniciarAutomacao);
     document.getElementById('btn-bot-parar').addEventListener('click', pararAutomacao);
     
@@ -539,6 +582,7 @@ function injetarPainelAutomacao() {
 }
 
 function atualizarBotoesUI() {
+    const btnTestar = document.getElementById('btn-bot-testar');
     const btnIniciar = document.getElementById('btn-bot-iniciar');
     const btnParar = document.getElementById('btn-bot-parar');
     const status = document.getElementById('bot-linkedin-status');
@@ -546,6 +590,7 @@ function atualizarBotoesUI() {
     if (!btnIniciar || !btnParar) return;
 
     if (botExecutando) {
+        if (btnTestar) { btnTestar.disabled = true; btnTestar.style.opacity = '0.4'; btnTestar.style.cursor = 'not-allowed'; btnTestar.style.backgroundColor = '#555'; }
         btnIniciar.disabled = true;  btnIniciar.style.opacity = '0.4'; btnIniciar.style.cursor = 'not-allowed'; btnIniciar.style.backgroundColor = '#555';
         btnParar.disabled = false;   btnParar.style.opacity = '1';     btnParar.style.cursor = 'pointer';
         if (inputUrl) inputUrl.disabled = true;
@@ -554,10 +599,19 @@ function atualizarBotoesUI() {
         const urlValue = inputUrl ? inputUrl.value.trim() : '';
         const isUrlValid = urlValue.startsWith('http://') || urlValue.startsWith('https://');
         
-        btnIniciar.disabled = !isUrlValid; 
-        btnIniciar.style.opacity = isUrlValid ? '1' : '0.4';   
-        btnIniciar.style.cursor = isUrlValid ? 'pointer' : 'not-allowed';
-        btnIniciar.style.backgroundColor = isUrlValid ? '#057a55' : '#555';
+        // Mantém botões testar ativos se for URL válida, mas reseta o INICIAR até retestarem.
+        if (btnTestar) {
+            btnTestar.innerText = "🔌 Testar";
+            btnTestar.disabled = !isUrlValid; 
+            btnTestar.style.opacity = isUrlValid ? '1' : '0.4';   
+            btnTestar.style.cursor = isUrlValid ? 'pointer' : 'not-allowed';
+            btnTestar.style.backgroundColor = isUrlValid ? '#2563eb' : '#555';
+        }
+        
+        btnIniciar.disabled = true; 
+        btnIniciar.style.opacity = '0.4';   
+        btnIniciar.style.cursor = 'not-allowed';
+        btnIniciar.style.backgroundColor = '#555';
         
         btnParar.disabled = true;    btnParar.style.opacity = '0.5';   btnParar.style.cursor = 'not-allowed';
         if (inputUrl) inputUrl.disabled = false;
