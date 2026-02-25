@@ -23,6 +23,14 @@ function logNoPainel(mensagem, tipo = 'info') {
 // 1. Funções de Espera e Busca
 const esperar = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+function obterUrlN8N() {
+    const input = document.getElementById('bot-linkedin-url');
+    if (input && input.value.trim() !== "") {
+        return input.value.trim();
+    }
+    return '';
+}
+
 function encontrarBotaoPorTexto(texto) {
     // Procura primeiro em spans que contêm o texto, e depois em botões diretos
     const elementos = Array.from(document.querySelectorAll('button, span.artdeco-button__text'));
@@ -149,7 +157,11 @@ async function processarFormularioViaN8n() {
     console.log("Enviando perguntas direto para o n8n...", perguntas);
     logNoPainel("📡 Consultando IA (n8n) para preencher a tela...", 'info');
 
-    const URL_WEBHOOK_N8N = 'http://localhost:5678/webhook/linkedin-ia';
+    const URL_WEBHOOK_N8N = obterUrlN8N();
+    if (!URL_WEBHOOK_N8N) {
+        logNoPainel("❌ Endpoint URL não configurada. Impossível continuar.", 'error');
+        throw new Error("URL do n8n não está definida na interface.");
+    }
     
     let tentativas = 0;
     const maxTentativas = 3;
@@ -460,18 +472,28 @@ function injetarPainelAutomacao() {
         display: flex; flex-direction: column; overflow: hidden;
     `;
 
+    const ultimaUrlSalva = localStorage.getItem('botLinkedIn_n8nUrl') || 'http://localhost:5678/webhook/linkedin-ia';
+
     painel.innerHTML = `
         <div style="background: #0a66c2; padding: 12px 18px; font-weight: bold; font-size: 15px; display: flex; justify-content: space-between; align-items: center;">
-            <span>🤖 Auto-Apply Helper</span>
+            <span>🤖 LinkedIn Auto-Apply Bot</span>
             <span id="bot-linkedin-status" style="font-size: 11px; font-weight: normal; background: rgba(0,0,0,0.3); padding: 4px 10px; border-radius: 15px;">Aguardando...</span>
         </div>
+        
+        <div style="padding: 12px 18px; background: #2a2a35; border-bottom: 1px solid #3a3a44; gap: 8px; display: flex; flex-direction: column;">
+            <label for="bot-linkedin-url" style="font-size: 11px; color: #aaa; text-transform: uppercase;">1. Endpoint IA (n8n Webhook URL)</label>
+            <input type="text" id="bot-linkedin-url" value="${ultimaUrlSalva}" placeholder="https://seu-n8n.com/webhook/..." style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #444; background: #16161b; color: #fff; font-size: 12px; box-sizing: border-box; outline: none;">
+        </div>
+
         <div style="padding: 10px 18px; font-size: 13px; background: #2a2a35; border-bottom: 1px solid #3a3a44; display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: #999;">Progresso atual:</span>
+            <span style="color: #999;">2. Progresso de Vagas:</span>
             <strong id="bot-linkedin-status-vaga" style="background: #1e1e24; padding: 4px 10px; border-radius: 6px; border: 1px solid #3a3a44;">0 / 0</strong>
         </div>
-        <div id="bot-linkedin-logs" style="height: 180px; overflow-y: auto; padding: 12px 18px; font-size: 12px; font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace; background: #16161b; color: #ccc;">
+        
+        <div id="bot-linkedin-logs" style="height: 160px; overflow-y: auto; padding: 12px 18px; font-size: 12px; font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace; background: #16161b; color: #ccc;">
             <p style="margin: 0; color: #666; font-style: italic;">Clique em iniciar para carregar o bot...</p>
         </div>
+        
         <div style="padding: 14px; display: flex; gap: 12px; background: #2a2a35; border-top: 1px solid #3a3a44;">
             <button id="btn-bot-iniciar" style="flex: 1; padding: 12px; background: #057a55; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 14px; transition: all 0.2s;">▶ Iniciar</button>
             <button id="btn-bot-parar" disabled style="flex: 1; padding: 12px; background: #e02424; color: white; border: none; border-radius: 6px; cursor: not-allowed; font-weight: bold; font-size: 14px; opacity: 0.5; transition: all 0.2s;">🛑 Parar</button>
@@ -480,7 +502,33 @@ function injetarPainelAutomacao() {
 
     document.body.appendChild(painel);
 
-    document.getElementById('btn-bot-iniciar').addEventListener('click', iniciarAutomacao);
+    const btnIniciar = document.getElementById('btn-bot-iniciar');
+    const inputUrl = document.getElementById('bot-linkedin-url');
+
+    // Validação Inicial da URL para habilitar o botão de Iniciar
+    function validarUrl() {
+        if (!botExecutando) {
+            const urlValue = inputUrl.value.trim();
+            if (urlValue.startsWith('http://') || urlValue.startsWith('https://')) {
+                btnIniciar.disabled = false;
+                btnIniciar.style.opacity = '1';
+                btnIniciar.style.cursor = 'pointer';
+                btnIniciar.style.backgroundColor = '#057a55';
+                localStorage.setItem('botLinkedIn_n8nUrl', urlValue); // Salva na memória do navegador
+            } else {
+                btnIniciar.disabled = true;
+                btnIniciar.style.opacity = '0.4';
+                btnIniciar.style.cursor = 'not-allowed';
+                btnIniciar.style.backgroundColor = '#555';
+            }
+        }
+    }
+
+    inputUrl.addEventListener('input', validarUrl);
+    // Chama logo ao abrir para checar o valor salvo
+    validarUrl();
+
+    btnIniciar.addEventListener('click', iniciarAutomacao);
     document.getElementById('btn-bot-parar').addEventListener('click', pararAutomacao);
     
     // Animação hover
@@ -494,15 +542,25 @@ function atualizarBotoesUI() {
     const btnIniciar = document.getElementById('btn-bot-iniciar');
     const btnParar = document.getElementById('btn-bot-parar');
     const status = document.getElementById('bot-linkedin-status');
+    const inputUrl = document.getElementById('bot-linkedin-url');
     if (!btnIniciar || !btnParar) return;
 
     if (botExecutando) {
-        btnIniciar.disabled = true;  btnIniciar.style.opacity = '0.5'; btnIniciar.style.cursor = 'not-allowed';
+        btnIniciar.disabled = true;  btnIniciar.style.opacity = '0.4'; btnIniciar.style.cursor = 'not-allowed'; btnIniciar.style.backgroundColor = '#555';
         btnParar.disabled = false;   btnParar.style.opacity = '1';     btnParar.style.cursor = 'pointer';
+        if (inputUrl) inputUrl.disabled = true;
         if (status) { status.innerText = 'Rodando...'; status.style.background = '#057a55'; }
     } else {
-        btnIniciar.disabled = false; btnIniciar.style.opacity = '1';   btnIniciar.style.cursor = 'pointer';
+        const urlValue = inputUrl ? inputUrl.value.trim() : '';
+        const isUrlValid = urlValue.startsWith('http://') || urlValue.startsWith('https://');
+        
+        btnIniciar.disabled = !isUrlValid; 
+        btnIniciar.style.opacity = isUrlValid ? '1' : '0.4';   
+        btnIniciar.style.cursor = isUrlValid ? 'pointer' : 'not-allowed';
+        btnIniciar.style.backgroundColor = isUrlValid ? '#057a55' : '#555';
+        
         btnParar.disabled = true;    btnParar.style.opacity = '0.5';   btnParar.style.cursor = 'not-allowed';
+        if (inputUrl) inputUrl.disabled = false;
         if (status) { status.innerText = 'Aguardando...'; status.style.background = 'rgba(0,0,0,0.3)'; }
     }
 }
