@@ -2,8 +2,9 @@
 const esperar = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 function encontrarBotaoPorTexto(texto) {
+    // Procura primeiro em spans que contêm o texto, e depois em botões diretos
     const elementos = Array.from(document.querySelectorAll('button, span.artdeco-button__text'));
-    return elementos.find(el => el.innerText.trim().toLowerCase().includes(texto.toLowerCase()));
+    return elementos.find(el => el.innerText.trim().toLowerCase() === texto.toLowerCase() || el.innerText.trim().toLowerCase().includes(texto.toLowerCase()));
 }
 
 // 2. Função Aprimorada para Extrair Dados
@@ -195,6 +196,36 @@ async function processarFormularioViaN8n() {
                     continue;
                 }
 
+                // 🟢 Lida com campos de "Typeahead" (busca enquanto digita, ex: Cidade/Localização)
+                if (campo.getAttribute('role') === 'combobox') {
+                    console.log(`Preenchendo auto-complete ${chave} com: ${valorResposta}`);
+                    campo.focus();
+                    campo.value = valorResposta;
+                    campo.dispatchEvent(new Event('input', { bubbles: true }));
+                    campo.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    // Simula seta para baixo para forçar exibir o menu
+                    campo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 }));
+                    
+                    // Espera 2 segundos para dar tempo do LinkedIn buscar as opções
+                    await esperar(2000);
+                    
+                    // Tenta clicar na primeira opção sugerida
+                    const containerDoCampo = campo.closest('div') || document;
+                    const opcoesTypeahead = containerDoCampo.querySelectorAll('.basic-typeahead__selectable, [role="option"]');
+                    
+                    if (opcoesTypeahead.length > 0) {
+                        opcoesTypeahead[0].click();
+                        await esperar(500);
+                    } else {
+                        // Se não encontrou opções visíveis, aperta Enter para confirmar
+                        campo.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter', keyCode: 13 }));
+                    }
+
+                    campo.dispatchEvent(new Event('blur', { bubbles: true }));
+                    continue;
+                }
+
                 if (campo.type && campo.type.toLowerCase() === 'checkbox') {
                     const resp = String(valorResposta).toLowerCase().trim();
                     if (['yes', 'true', '1', 'sim', 'checked', 'marcar'].includes(resp)) {
@@ -291,13 +322,30 @@ async function iniciarAutomacao() {
                 await processarFormularioViaN8n();
                 await esperar(1500);
 
+                // 🟢 VERIFICA SE EXPLODIU ERRO NA TELA (EX: ARQUIVO OBRIGATÓRIO)
+                const painelDeErro = document.querySelector('.artdeco-inline-feedback--error');
+                if (painelDeErro) {
+                    const textoErro = painelDeErro.innerText.toLowerCase();
+                    if (textoErro.includes('file') || textoErro.includes('arquivo') || textoErro.includes('obrigatório') || textoErro.includes('required') || textoErro.includes('currículo') || textoErro.includes('resume')) {
+                        console.log("⚠️ Campo de arquivo obrigatório não preenchido ou erro insolúvel detectado. Pulando vaga...");
+                        const btnFechar = document.querySelector('button[aria-label="Fechar"]') || document.querySelector('button[aria-label="Dismiss"]');
+                        if (btnFechar) btnFechar.click();
+                        await esperar(1000);
+                        const btnDescartar = encontrarBotaoPorTexto('Descartar');
+                        if (btnDescartar) btnDescartar.closest('button').click();
+                        
+                        formAberto = false;
+                        continue;
+                    }
+                }
+
                 let btnAvancar = encontrarBotaoPorTexto('Avançar') || encontrarBotaoPorTexto('Revisar');
                 let btnEnviar = encontrarBotaoPorTexto('Enviar candidatura');
 
                 if (btnAvancar && !btnAvancar.disabled) {
                     const btnAvancarReal = btnAvancar.closest('button') || btnAvancar;
                     btnAvancarReal.click();
-                    console.log("➡️ Avançando página...");
+                    console.log(`➡️ Avançando página (Clicou em: ${btnAvancar.innerText.trim()})...`);
                     await esperar(2000);
                     tentativasSeguidasSemAvanco = 0;
                 } else if (btnEnviar && !btnEnviar.disabled) {
