@@ -386,25 +386,32 @@ async function iniciarAutomacao() {
   atualizarBotoesUI();
 
   try {
-    logNoPainel("🚀 Procurando vagas na tela de pesquisa...", "info");
-    const seletorCards =
-      ".job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item";
+    let continuarPaginas = true;
 
-    // 🟢 FUNÇÃO AUXILIAR PARA EVITAR SELEÇÃO DUPLA DO MESMO CARD
-    const obterCardsUnicos = () => {
-      const todos = document.querySelectorAll(seletorCards);
-      // Remove um card caso ele esteja inserido dentro de outro elemento já selecionado na mesma query
-      return Array.from(todos).filter((el) => !el.parentElement.closest(seletorCards));
-    };
+    while (continuarPaginas && botExecutando) {
+      logNoPainel("🚀 Procurando vagas na tela de pesquisa...", "info");
+      const seletorCards =
+        ".job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item";
 
-    let vagasIniciais = obterCardsUnicos();
+      // 🟢 FUNÇÃO AUXILIAR PARA EVITAR SELEÇÃO DUPLA DO MESMO CARD
+      const obterCardsUnicos = () => {
+        const todos = document.querySelectorAll(seletorCards);
+        // Remove um card caso ele esteja inserido dentro de outro elemento já selecionado na mesma query
+        return Array.from(todos).filter((el) => !el.parentElement.closest(seletorCards));
+      };
 
-    if (vagasIniciais.length === 0) {
-      logNoPainel("❌ Nenhuma vaga visível carregada na lateral.", "error");
-      botExecutando = false;
-      atualizarBotoesUI();
-      return;
-    }
+      let vagasIniciais = obterCardsUnicos();
+
+      if (vagasIniciais.length === 0) {
+        logNoPainel("⏳ Aguardando vagas carregarem...", "info");
+        await esperar(5000);
+        vagasIniciais = obterCardsUnicos();
+        if (vagasIniciais.length === 0) {
+          logNoPainel("❌ Nenhuma vaga nova carregada. Fim da varredura.", "warning");
+          continuarPaginas = false;
+          break;
+        }
+      }
 
     logNoPainel(
       `Encontradas ${vagasIniciais.length} vagas visíveis. Iniciando varredura.`,
@@ -614,13 +621,29 @@ async function iniciarAutomacao() {
       await esperar(4000);
     }
 
+    // Fim da iteração das vagas na página atual
+
     if (botExecutando) {
-      logNoPainel(
-        "🏆 Automação concluída em todas as vagas carregadas!",
-        "success",
-      );
-      alert("Sucesso! O Bot verificou todas as vagas carregadas nesta página.");
+      const btnProximaPagina = document.querySelector(".jobs-search-pagination__button--next");
+      
+      if (btnProximaPagina && !btnProximaPagina.disabled) {
+        logNoPainel("➡️ Navegando para a próxima página de vagas...", "info");
+        btnProximaPagina.scrollIntoView({ behavior: "smooth", block: "center" });
+        await esperar(2000);
+        btnProximaPagina.click();
+        
+        logNoPainel("⏳ Aguardando 8 segundos para carregar a nova página...", "info");
+        await esperar(8000); 
+      } else {
+        logNoPainel(
+          "🏆 Automação concluída em todas as páginas e vagas disponíveis!",
+          "success",
+        );
+        alert("Sucesso! O Bot verificou todas as vagas e não encontrou mais páginas para avançar.");
+        continuarPaginas = false;
+      }
     }
+  } // fim do while de paginas
   } catch (erro) {
     logNoPainel(`❌ Erro Inesperado: ${erro.message}`, "error");
     alert("Ops! O robô sofreu um acidente: " + erro.message);
