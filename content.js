@@ -185,6 +185,21 @@ function extrairPerguntasDaTela() {
 
 // 3. A Função com Retentativa Inteligente e Controle de Limites (Rate Limit)
 async function processarFormularioViaN8n() {
+  const modalHeader = document.querySelector(".artdeco-modal h3");
+  if (modalHeader) {
+    const text = modalHeader.innerText.toLowerCase();
+    if (
+      text.includes("currículo") ||
+      text.includes("resume") ||
+      text.includes("curriculo")
+    ) {
+      console.log(
+        "Página de currículo detectada. Pulando processamento de IA.",
+      );
+      return true;
+    }
+  }
+
   const perguntas = extrairPerguntasDaTela();
   if (Object.keys(perguntas).length === 0) return false;
 
@@ -204,10 +219,7 @@ async function processarFormularioViaN8n() {
   const maxTentativas = 3;
 
   while (tentativas < maxTentativas) {
-    console.log(
-      "Respirando 30 segundos para respeitar o limite da API free...",
-    );
-    await esperar(10000);
+    await esperar(2000);
     try {
       const resposta = await fetch(URL_WEBHOOK_N8N, {
         method: "POST",
@@ -377,7 +389,15 @@ async function iniciarAutomacao() {
     logNoPainel("🚀 Procurando vagas na tela de pesquisa...", "info");
     const seletorCards =
       ".job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item";
-    let vagasIniciais = document.querySelectorAll(seletorCards);
+
+    // 🟢 FUNÇÃO AUXILIAR PARA EVITAR SELEÇÃO DUPLA DO MESMO CARD
+    const obterCardsUnicos = () => {
+      const todos = document.querySelectorAll(seletorCards);
+      // Remove um card caso ele esteja inserido dentro de outro elemento já selecionado na mesma query
+      return Array.from(todos).filter((el) => !el.parentElement.closest(seletorCards));
+    };
+
+    let vagasIniciais = obterCardsUnicos();
 
     if (vagasIniciais.length === 0) {
       logNoPainel("❌ Nenhuma vaga visível carregada na lateral.", "error");
@@ -398,7 +418,7 @@ async function iniciarAutomacao() {
       }
 
       // 🟢 RE-BUSCA OS CARDS PARA EVITAR ELEMENTOS "MORTOS" (DETACHED) APÓS ATUALIZAÇÃO DO LINKEDIN
-      let cardsNovos = document.querySelectorAll(seletorCards);
+      let cardsNovos = obterCardsUnicos();
 
       // Se a lista de vagas mudou de tamanho, ajusta o limite ou para
       if (i >= cardsNovos.length) {
@@ -621,7 +641,7 @@ function injetarPainelAutomacao() {
         position: fixed; bottom: 20px; right: 20px; width: 360px;
         background: #1e1e24; color: #fff; border: 1px solid #3a3a44;
         border-radius: 12px; box-shadow: 0 10px 35px rgba(0,0,0,0.6);
-        z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        z-index: 2147483647; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
         display: flex; flex-direction: column; overflow: hidden;
     `;
 
