@@ -407,7 +407,7 @@ async function iniciarAutomacao() {
         await esperar(5000);
         vagasIniciais = obterCardsUnicos();
         if (vagasIniciais.length === 0) {
-          logNoPainel("❌ Nenhuma vaga nova carregada. Fim da varredura.", "warning");
+          logNoPainel("❌ Vagas não encontradas. O LinkedIn reteve a lista. Atualize a página (F5) e inicie novamente.", "error");
           continuarPaginas = false;
           break;
         }
