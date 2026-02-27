@@ -32,15 +32,24 @@ function obterUrlN8N() {
 }
 
 function encontrarBotaoPorTexto(texto) {
-  // Procura primeiro em spans que contêm o texto, e depois em botões diretos
+  // Restringe a busca ao modal da vaga (se estiver aberto), evitando clicar nos botões de fundo da página.
+  const modal = document.querySelector(".jobs-easy-apply-modal, .artdeco-modal");
+  const baseArea = modal ? modal : document;
+
   const elementos = Array.from(
-    document.querySelectorAll("button, span.artdeco-button__text"),
+    baseArea.querySelectorAll("button, span.artdeco-button__text"),
   );
-  return elementos.find(
-    (el) =>
-      el.innerText.trim().toLowerCase() === texto.toLowerCase() ||
-      el.innerText.trim().toLowerCase().includes(texto.toLowerCase()),
-  );
+  
+  return elementos.find((el) => {
+    const textoEl = el.innerText.trim().toLowerCase();
+    const isTextoValido =
+      textoEl === texto.toLowerCase() || textoEl.includes(texto.toLowerCase());
+    
+    // Ignora botões da paginação do site que ficam visíveis por trás do modal
+    const isBackgroundPagination = el.closest(".jobs-search-pagination");
+
+    return isTextoValido && !isBackgroundPagination;
+  });
 }
 
 // 2. Função Aprimorada para Extrair Dados
@@ -543,21 +552,15 @@ async function iniciarAutomacao() {
 
         if (!botExecutando) break;
 
+        let btnEnviar = encontrarBotaoPorTexto("Enviar candidatura") || encontrarBotaoPorTexto("Submit application");
         let btnAvancar =
           encontrarBotaoPorTexto("Avançar") ||
-          encontrarBotaoPorTexto("Revisar");
-        let btnEnviar = encontrarBotaoPorTexto("Enviar candidatura");
+          encontrarBotaoPorTexto("Revisar") ||
+          encontrarBotaoPorTexto("Next") ||
+          encontrarBotaoPorTexto("Review");
 
-        if (btnAvancar && !btnAvancar.disabled) {
-          const btnAvancarReal = btnAvancar.closest("button") || btnAvancar;
-          btnAvancarReal.click();
-          logNoPainel(
-            `👉 Modificando aba (Clicado em: ${btnAvancar.innerText.trim()})`,
-            "info",
-          );
-          await esperar(2000);
-          tentativasSeguidasSemAvanco = 0;
-        } else if (btnEnviar && !btnEnviar.disabled) {
+        // Prioridade MÁXIMA para o Enviar Candidatura (se já apareceu na primeira tela, não pule)
+        if (btnEnviar && !btnEnviar.disabled) {
           logNoPainel(
             "✅ Formulário validado! Finalizando envio da candidatura...",
             "success",
@@ -567,6 +570,15 @@ async function iniciarAutomacao() {
 
           await esperar(3000);
           formAberto = false;
+        } else if (btnAvancar && !btnAvancar.disabled) {
+          const btnAvancarReal = btnAvancar.closest("button") || btnAvancar;
+          btnAvancarReal.click();
+          logNoPainel(
+            `👉 Modificando aba (Clicado em: ${btnAvancar.innerText.trim()})`,
+            "info",
+          );
+          await esperar(2000);
+          tentativasSeguidasSemAvanco = 0;
         } else {
           tentativasSeguidasSemAvanco++;
           logNoPainel(
