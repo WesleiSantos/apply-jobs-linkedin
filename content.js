@@ -395,9 +395,11 @@ async function iniciarAutomacao() {
   atualizarBotoesUI();
 
   try {
-    logNoPainel("🚀 Procurando vagas na tela de pesquisa...", "info");
-    const seletorCards =
-      ".job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item";
+    let temProximaPagina = true;
+    while (temProximaPagina && botExecutando) {
+      logNoPainel("🚀 Procurando vagas na tela de pesquisa...", "info");
+      const seletorCards =
+        ".job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item";
 
     // 🟢 FUNÇÃO AUXILIAR PARA EVITAR SELEÇÃO DUPLA DO MESMO CARD
     const obterCardsUnicos = () => {
@@ -628,10 +630,25 @@ async function iniciarAutomacao() {
 
     if (botExecutando) {
       logNoPainel(
-        "🏆 Automação concluída em todas as vagas carregadas!",
+        "🏆 Automação concluída nesta página! Buscando próxima página...",
         "success",
       );
-      alert("Sucesso! O Bot verificou todas as vagas carregadas nesta página.");
+      
+      const btnNextPage = document.querySelector(".jobs-search-pagination__button--next");
+      if (btnNextPage && !btnNextPage.disabled) {
+        logNoPainel("➡️ Indo para a próxima página...", "info");
+        btnNextPage.click();
+        await esperar(8000); // Aguarda o carregamento da nova página
+      } else {
+        logNoPainel("🛑 Nenhuma outra página encontrada ou botão desabilitado. Fim da automação.", "info");
+        temProximaPagina = false;
+      }
+    }
+    
+    } // Fim do while (temProximaPagina)
+
+    if (botExecutando && !temProximaPagina) {
+      alert("Sucesso! O Bot verificou todas as páginas de vagas disponíveis.");
     }
   } catch (erro) {
     logNoPainel(`❌ Erro Inesperado: ${erro.message}`, "error");
