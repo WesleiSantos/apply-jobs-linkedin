@@ -31,31 +31,318 @@ function obterUrlN8N() {
   return "";
 }
 
-function encontrarBotaoPorTexto(texto) {
+const SELETOR_CARDS_VAGA =
+  '[componentkey^="job-card-component-ref-"], .job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item, .jobs-search-results-list';
+
+function elementoEstaVisivel(el) {
+  if (!el) return false;
+  const rect = el.getBoundingClientRect();
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    window.getComputedStyle(el).visibility !== "hidden"
+  );
+}
+
+function obterModalAberto() {
+  const modais = document.querySelectorAll(
+    ".jobs-easy-apply-modal, .artdeco-modal, dialog[data-testid='dialog'], dialog[open]",
+  );
+  for (const m of modais) {
+    if (elementoEstaVisivel(m)) {
+      return m;
+    }
+  }
+  return null;
+}
+
+function clicarElemento(el) {
+  if (!el) return false;
+  const alvo = el.closest("button") || el.closest("a") || el;
+  if (alvo && typeof alvo.click === "function") {
+    alvo.click();
+    return true;
+  }
+  return false;
+}
+
+function modalEhConfirmacaoDeEnvio() {
+  const modal = obterModalAberto();
+  if (!modal) return false;
+  if (
+    modal.querySelector('svg[data-test-icon="signal-success"]') ||
+    modal.querySelector(".jpac-modal-header") ||
+    modal.querySelector('[data-view-name="seeker-next-best-action-card"]')
+  ) {
+    return true;
+  }
+  const textoModal = (modal.innerText || "").toLowerCase();
+  return (
+    textoModal.includes("candidatura foi enviada") ||
+    (textoModal.includes("sua candidatura") &&
+      textoModal.includes("foi enviada")) ||
+    textoModal.includes("application was sent")
+  );
+}
+
+function encontrarBotaoPorTexto(texto, apenasNoModal = false) {
   // Restringe a busca ao modal da vaga (se estiver aberto), evitando clicar nos botões de fundo da página.
-  const modal = document.querySelector(".jobs-easy-apply-modal, .artdeco-modal");
+  const modal = obterModalAberto();
+  if (apenasNoModal && !modal) return null;
   const baseArea = modal ? modal : document;
 
-  const elementos = Array.from(
-    baseArea.querySelectorAll("button, span.artdeco-button__text"),
-  );
-  
-  return elementos.find((el) => {
-    const textoEl = el.innerText.trim().toLowerCase();
-    const isTextoValido =
-      textoEl === texto.toLowerCase() || textoEl.includes(texto.toLowerCase());
-    
-    // Ignora botões da paginação do site que ficam visíveis por trás do modal
-    const isBackgroundPagination = el.closest(".jobs-search-pagination");
+  const alvo = texto.toLowerCase();
 
-    return isTextoValido && !isBackgroundPagination;
+  const elementos = Array.from(
+    baseArea.querySelectorAll(
+      'button, a, [role="button"], input[type="submit"], input[type="button"]',
+    ),
+  );
+
+  return elementos.find((el) => {
+    if (!elementoEstaVisivel(el)) return false;
+
+    const conteudo = (
+      el.textContent ||
+      el.innerText ||
+      el.getAttribute("value") ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+    let isTextoValido =
+      conteudo === alvo || conteudo.includes(alvo);
+
+    // Também aceita correspondência por aria-label (ex: botões só com ícone)
+    if (!isTextoValido) {
+      const ariaLabel = (el.getAttribute("aria-label") || "")
+        .trim()
+        .toLowerCase();
+      if (ariaLabel) {
+        isTextoValido = ariaLabel === alvo || ariaLabel.includes(alvo);
+      }
+    }
+
+    // Ignora botões da paginação ou do próprio painel do bot
+    const isIgnorado =
+      el.closest(".jobs-search-pagination") ||
+      el.closest("#bot-linkedin-painel");
+
+    return isTextoValido && !isIgnorado;
   });
+}
+
+function encontrarBotaoFecharModal(modal = obterModalAberto()) {
+  const base = modal || document;
+  return (
+    base.querySelector('button[aria-label="Fechar"]') ||
+    base.querySelector('button[aria-label="Dispensar"]') ||
+    base.querySelector('button[aria-label="Dismiss"]') ||
+    base.querySelector('button[aria-label*="Fechar"]') ||
+    base.querySelector('button[aria-label*="Dispensar"]') ||
+    base.querySelector('button[aria-label*="Dismiss"]') ||
+    base.querySelector("button.artdeco-modal__dismiss") ||
+    base.querySelector("button[data-test-modal-close-btn]")
+  );
+}
+
+async function fecharModalConfirmacao() {
+  // Aguarda até o dialog de confirmação aparecer na tela após o envio
+  let modal = obterModalAberto();
+  for (let tentativa = 0; tentativa < 5; tentativa++) {
+    if (modal && modalEhConfirmacaoDeEnvio()) break;
+    await esperar(1000);
+    modal = obterModalAberto();
+  }
+
+  if (!modal) return;
+
+  // 1. Prioriza botões de ação/dispensa do rodapé ("Agora não", "Concluído", "Done")
+  const btnAcaoFinal =
+    encontrarBotaoPorTexto("Concluído", true) ||
+    encontrarBotaoPorTexto("Done", true) ||
+    encontrarBotaoPorTexto("Agora não", true) ||
+    encontrarBotaoPorTexto("Not now", true);
+
+  if (btnAcaoFinal) {
+    clicarElemento(btnAcaoFinal);
+    await esperar(1500);
+  }
+
+  // 2. Se o modal continuar aberto, fecha pelo botão "X" (Dispensar / Fechar / Dismiss)
+  const modalRestante = obterModalAberto();
+  if (modalRestante) {
+    const btnFechar = encontrarBotaoFecharModal(modalRestante);
+    if (btnFechar) {
+      clicarElemento(btnFechar);
+      await esperar(1500);
+    }
+  }
+}
+
+async function fecharEDescartarModal() {
+  const modal = obterModalAberto();
+  if (!modal) return;
+
+  // Se for o modal de confirmação pós-candidatura que ficou aberto, fecha-o
+  if (modalEhConfirmacaoDeEnvio()) {
+    await fecharModalConfirmacao();
+    return;
+  }
+
+  const btnFechar = encontrarBotaoFecharModal(modal);
+  if (btnFechar) {
+    clicarElemento(btnFechar);
+    await esperar(1500);
+  }
+
+  if (obterModalAberto()) {
+    const btnAcao =
+      encontrarBotaoPorTexto("Descartar", true) ||
+      encontrarBotaoPorTexto("Discard", true) ||
+      encontrarBotaoPorTexto("Agora não", true) ||
+      encontrarBotaoPorTexto("Not now", true) ||
+      encontrarBotaoPorTexto("Concluído", true) ||
+      encontrarBotaoPorTexto("Done", true);
+
+    if (btnAcao) {
+      clicarElemento(btnAcao);
+      await esperar(1500);
+    }
+  }
+}
+
+// 🟢 Busca dedicada para o botão final "Enviar candidatura" / "Submit application".
+function encontrarBotaoEnviar() {
+  const modal = obterModalAberto();
+  if (!modal) return null;
+  const baseArea = modal;
+
+  const seletores = [
+    'button[aria-label*="Enviar candidatura"]',
+    'button[aria-label*="enviar candidatura"]',
+    'a[aria-label*="Enviar candidatura"]',
+    'a[aria-label*="enviar candidatura"]',
+    'button[aria-label*="Submit application"]',
+    'button[aria-label*="Submit"]',
+    'button[data-control-name="submit_application"]',
+    'input[type="submit"]',
+  ];
+
+  for (const seletor of seletores) {
+    const encontrado = baseArea.querySelector(seletor);
+    if (encontrado && elementoEstaVisivel(encontrado)) return encontrado;
+  }
+
+  return (
+    encontrarBotaoPorTexto("Enviar candidatura", true) ||
+    encontrarBotaoPorTexto("Submit application", true) ||
+    encontrarBotaoPorTexto("Enviar", true)
+  );
+}
+
+function ehElementoDeCardOuFiltro(el) {
+  if (!el) return true;
+  // Ignora qualquer elemento dentro da lista de cards à esquerda, filtros de topo ou painel do bot
+  if (
+    el.closest(SELETOR_CARDS_VAGA) ||
+    el.closest("#bot-linkedin-painel") ||
+    el.closest(".jobs-search-pagination") ||
+    el.closest("header") ||
+    el.closest('[role="search"]') ||
+    el.closest(".search-reusables__filter-list") ||
+    el.closest('[class*="search-reusables"]')
+  ) {
+    return true;
+  }
+  const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+  if (aria.includes("filtro") || aria.includes("filter")) {
+    return true;
+  }
+  return false;
+}
+
+// 🟢 Encontra o botão de "Candidatura Simplificada" (Easy Apply) no painel de detalhes da vaga.
+function encontrarBotaoCandidatura() {
+  const seletores = [
+    ".jobs-apply-button",
+    'button[aria-label*="Candidatura simplificada"]',
+    'button[aria-label*="candidatura simplificada"]',
+    'a[aria-label*="Candidatura simplificada"]',
+    'a[aria-label*="candidatura simplificada"]',
+    'button[aria-label*="Easy Apply"]',
+    'a[aria-label*="Easy Apply"]',
+    'button[aria-label*="easy apply"]',
+    'a[aria-label*="easy apply"]',
+  ];
+
+  for (const seletor of seletores) {
+    const encontrados = document.querySelectorAll(seletor);
+    for (const el of encontrados) {
+      if (elementoEstaVisivel(el) && !ehElementoDeCardOuFiltro(el)) {
+        return el;
+      }
+    }
+  }
+
+  // Fallback por texto visível apenas em botões/links fora da lista de cards e dos filtros
+  const candidatos = Array.from(
+    document.querySelectorAll('button, a, [role="button"]'),
+  );
+  const porTexto = candidatos.find((el) => {
+    if (!elementoEstaVisivel(el) || ehElementoDeCardOuFiltro(el)) return false;
+    const texto = (el.textContent || el.innerText || "").trim().toLowerCase();
+    // Garante que é realmente um botão curto de candidatura, e não um bloco grande de texto
+    return (
+      texto.length > 0 &&
+      texto.length <= 45 &&
+      (texto.includes("candidatura simplificada") ||
+        texto.includes("easy apply"))
+    );
+  });
+
+  if (porTexto) {
+    return porTexto.closest("button") || porTexto.closest("a") || porTexto;
+  }
+
+  return null;
+}
+
+// 🟢 Verifica se o card de vaga possui o selo/ícone de "Candidatura simplificada".
+function cardTemCandidaturaSimplificada(card) {
+  if (!card) return false;
+  const texto = (card.innerText || "").toLowerCase();
+  return (
+    texto.includes("candidatura simplificada") ||
+    !!card.querySelector('svg[id="inbug-fill-small"]')
+  );
+}
+
+// 🟢 Retorna o texto visível da opção de um radio no DOM novo do LinkedIn.
+// No novo layout o <label> está vazio e o texto ("Yes"/"No") fica num <p> vizinho ao input.
+function obterTextoOpcaoRadio(radio) {
+  if (!radio) return "";
+
+  const labelDoRadio =
+    radio.closest("fieldset")?.querySelector(`label[for="${radio.id}"]`) ||
+    document.querySelector(`label[for="${radio.id}"]`);
+  const textoLabel = labelDoRadio ? labelDoRadio.innerText.trim() : "";
+  if (textoLabel) return textoLabel;
+
+  // Fallback: o texto da opção está em um <p> dentro do contêiner vizinho ao input
+  const containerOpcao = radio.closest("div")?.parentElement;
+  const pOpcao = containerOpcao?.querySelector("p");
+  if (pOpcao && pOpcao.innerText.trim()) return pOpcao.innerText.trim();
+
+  return "";
 }
 
 // 2. Função Aprimorada para Extrair Dados
 function extrairPerguntasDaTela() {
   const perguntas = {};
-  const areaDoFormulario = document.querySelector(".artdeco-modal") || document;
+  const areaDoFormulario = obterModalAberto();
+  if (!areaDoFormulario) return perguntas;
 
   // Busca inputs, selects e textareas
   const elementos = areaDoFormulario.querySelectorAll(
@@ -91,7 +378,20 @@ function extrairPerguntasDaTela() {
         const legend =
           fieldset.querySelector('legend span[aria-hidden="true"]') ||
           fieldset.querySelector("legend");
-        if (legend) textoPergunta = legend.innerText.trim().split("\n")[0];
+        if (legend) {
+          textoPergunta = legend.innerText.trim().split("\n")[0];
+        } else {
+          // 🟢 Novo DOM: a pergunta fica num <p> imediatamente antes do <fieldset> (não há mais <legend>)
+          const perguntaAnterior = fieldset.previousElementSibling;
+          if (perguntaAnterior && perguntaAnterior.innerText.trim()) {
+            textoPergunta = perguntaAnterior.innerText.trim().split("\n")[0];
+          }
+        }
+
+        // Fallback final: o próprio input tem a pergunta no aria-label
+        if (!textoPergunta && campo.ariaLabel) {
+          textoPergunta = campo.ariaLabel.trim();
+        }
 
         const nomeDoGrupo = campo.name;
 
@@ -101,10 +401,8 @@ function extrairPerguntasDaTela() {
           `input[name="${nomeDoGrupo}"]`,
         );
         radiosDoGrupo.forEach((radio) => {
-          const labelDoRadio = fieldset.querySelector(
-            `label[for="${radio.id}"]`,
-          );
-          if (labelDoRadio) opcoes.push(labelDoRadio.innerText.trim());
+          const textoOpcao = obterTextoOpcaoRadio(radio);
+          if (textoOpcao) opcoes.push(textoOpcao);
         });
 
         perguntas[nomeDoGrupo] = {
@@ -194,7 +492,9 @@ function extrairPerguntasDaTela() {
 
 // 3. A Função com Retentativa Inteligente e Controle de Limites (Rate Limit)
 async function processarFormularioViaN8n() {
-  const modalHeader = document.querySelector(".artdeco-modal h3");
+  const modalHeader = document.querySelector(
+    ".artdeco-modal h3, dialog[data-testid='dialog'] #dialog-header, dialog[data-testid='dialog'] h2",
+  );
   if (modalHeader) {
     const text = modalHeader.innerText.toLowerCase();
     if (
@@ -272,13 +572,10 @@ async function processarFormularioViaN8n() {
           `input[type="radio"][name="${chave}"]`,
         );
         if (radios.length > 0) {
+          const respostaNormalizada = String(valorResposta).toLowerCase().trim();
           radios.forEach((radio) => {
-            const labelBox = document.querySelector(`label[for="${radio.id}"]`);
-            if (
-              labelBox &&
-              labelBox.innerText.trim().toLowerCase() ===
-                String(valorResposta).toLowerCase()
-            ) {
+            const textoOpcao = obterTextoOpcaoRadio(radio).toLowerCase().trim();
+            if (textoOpcao && textoOpcao === respostaNormalizada) {
               radio.click();
               radio.dispatchEvent(new Event("change", { bubbles: true }));
             }
@@ -399,7 +696,7 @@ async function iniciarAutomacao() {
     while (temProximaPagina && botExecutando) {
       logNoPainel("🚀 Procurando vagas na tela de pesquisa...", "info");
       const seletorCards =
-        ".job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item";
+        '[componentkey^="job-card-component-ref-"], .job-card-container, .jobs-search-results__list-item, .scaffold-layout__list-item';
 
     // 🟢 FUNÇÃO AUXILIAR PARA EVITAR SELEÇÃO DUPLA DO MESMO CARD
     const obterCardsUnicos = () => {
@@ -450,17 +747,22 @@ async function iniciarAutomacao() {
 
       const card = cardsNovos[i];
 
+      // 🟢 Reconhece o selo de "Candidatura simplificada" no card (usado pelo bot para decidir/registrar).
+      const temCandidaturaSimplificada = cardTemCandidaturaSimplificada(card);
+      logNoPainel(
+        (temCandidaturaSimplificada ? "✅" : "⚠️") +
+          ` Vaga ${i + 1}: ${
+            temCandidaturaSimplificada
+              ? "possui 'Candidatura simplificada'."
+              : "NÃO possui 'Candidatura simplificada' (pode ser candidatura externa)."
+          }`,
+        temCandidaturaSimplificada ? "success" : "warning",
+      );
+
       // Garante que nenhum modal anterior travou aberto
-      const modalAberto = document.querySelector(".artdeco-modal");
-      if (modalAberto) {
-        const btnFecharModal =
-          document.querySelector('button[aria-label="Fechar"]') ||
-          document.querySelector('button[aria-label="Dismiss"]');
-        if (btnFecharModal) btnFecharModal.click();
-        await esperar(5000);
-        const btnDescartarModal = encontrarBotaoPorTexto("Descartar");
-        if (btnDescartarModal) btnDescartarModal.closest("button").click();
-        await esperar(5000);
+      if (obterModalAberto()) {
+        await fecharEDescartarModal();
+        await esperar(2000);
       }
 
       card.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -468,7 +770,12 @@ async function iniciarAutomacao() {
 
       const linkClicavel =
         card.querySelector(".job-card-list__title--link") ||
-        card.querySelector("a");
+        card.querySelector(".job-card-container__link") ||
+        card.querySelector('a[href*="/jobs/view/"]') ||
+        card.querySelector('a[href*="currentJobId="]') ||
+        card.querySelector("a") ||
+        card.querySelector('[componentkey^="job-card-component-ref-"]') ||
+        card.querySelector('[role="button"]');
 
       if (linkClicavel) {
         linkClicavel.click();
@@ -479,12 +786,12 @@ async function iniciarAutomacao() {
         card.click();
       }
 
-      // Aguarda até o botão de Candidatura aparecer
+      // Aguarda até o botão de Candidatura Simplificada (Easy Apply) aparecer
       let btnCandidatura = null;
       for (let j = 0; j < 5; j++) {
         if (!botExecutando) break;
         await esperar(2000);
-        btnCandidatura = document.querySelector(".jobs-apply-button");
+        btnCandidatura = encontrarBotaoCandidatura();
         if (btnCandidatura) break;
       }
 
@@ -492,14 +799,26 @@ async function iniciarAutomacao() {
 
       if (!btnCandidatura) {
         logNoPainel(
-          "Botão de Candidatura Simplificada não encontrado (Você já se candidatou?). Pulando esta vaga.",
+          "Botão de Candidatura Simplificada não encontrado (Você já se candidatou ou não é Easy Apply?). Pulando esta vaga.",
           "warning",
         );
         continue;
       }
 
-      btnCandidatura.click();
+      clicarElemento(btnCandidatura);
       await esperar(3000);
+
+      // Garante que o modal do formulário realmente abriu após o clique
+      if (!obterModalAberto()) {
+        await esperar(2000);
+      }
+      if (!obterModalAberto()) {
+        logNoPainel(
+          "⚠️ Modal de candidatura não abriu para esta vaga. Pulando...",
+          "warning",
+        );
+        continue;
+      }
 
       let formAberto = true;
       let tentativasSeguidasSemAvanco = 0;
@@ -511,10 +830,14 @@ async function iniciarAutomacao() {
             "warning",
           );
           formAberto = false;
-          const btnFecharAbort =
-            document.querySelector('button[aria-label="Fechar"]') ||
-            document.querySelector('button[aria-label="Dismiss"]');
-          if (btnFecharAbort) btnFecharAbort.click();
+          const btnFecharAbort = encontrarBotaoFecharModal();
+          if (btnFecharAbort) clicarElemento(btnFecharAbort);
+          break;
+        }
+
+        // Se o modal fechou sozinho ou já é a confirmação de candidatura enviada, encerra o preenchimento
+        if (!obterModalAberto() || modalEhConfirmacaoDeEnvio()) {
+          formAberto = false;
           break;
         }
 
@@ -539,13 +862,7 @@ async function iniciarAutomacao() {
               "⚠️ Erro Fatal no formulário (ex: Arquivo obrigatório). Pulando vaga...",
               "error",
             );
-            const btnFechar =
-              document.querySelector('button[aria-label="Fechar"]') ||
-              document.querySelector('button[aria-label="Dismiss"]');
-            if (btnFechar) btnFechar.click();
-            await esperar(2000);
-            const btnDescartar = encontrarBotaoPorTexto("Descartar");
-            if (btnDescartar) btnDescartar.closest("button").click();
+            await fecharEDescartarModal();
 
             formAberto = false;
             continue;
@@ -554,12 +871,14 @@ async function iniciarAutomacao() {
 
         if (!botExecutando) break;
 
-        let btnEnviar = encontrarBotaoPorTexto("Enviar candidatura") || encontrarBotaoPorTexto("Submit application");
+        let btnEnviar = encontrarBotaoEnviar();
         let btnAvancar =
-          encontrarBotaoPorTexto("Avançar") ||
-          encontrarBotaoPorTexto("Revisar") ||
-          encontrarBotaoPorTexto("Next") ||
-          encontrarBotaoPorTexto("Review");
+          encontrarBotaoPorTexto("Avançar", true) ||
+          encontrarBotaoPorTexto("Avaliar", true) ||
+          encontrarBotaoPorTexto("Revisar", true) ||
+          encontrarBotaoPorTexto("Next", true) ||
+          encontrarBotaoPorTexto("Revisar candidatura", true) ||
+          encontrarBotaoPorTexto("Review", true);
 
         // Prioridade MÁXIMA para o Enviar Candidatura (se já apareceu na primeira tela, não pule)
         if (btnEnviar && !btnEnviar.disabled) {
@@ -568,13 +887,12 @@ async function iniciarAutomacao() {
             "success",
           );
 
-          (btnEnviar.closest("button") || btnEnviar).click();
+          clicarElemento(btnEnviar);
 
           await esperar(3000);
           formAberto = false;
         } else if (btnAvancar && !btnAvancar.disabled) {
-          const btnAvancarReal = btnAvancar.closest("button") || btnAvancar;
-          btnAvancarReal.click();
+          clicarElemento(btnAvancar);
           logNoPainel(
             `👉 Modificando aba (Clicado em: ${btnAvancar.innerText.trim()})`,
             "info",
@@ -594,13 +912,7 @@ async function iniciarAutomacao() {
               "⚠️ Formulário exigiu longa intervenção manual ou travou. Fechando/pulando.",
               "error",
             );
-            const btnFechar =
-              document.querySelector('button[aria-label="Fechar"]') ||
-              document.querySelector('button[aria-label="Dismiss"]');
-            if (btnFechar) btnFechar.click();
-            await esperar(1000);
-            const btnDescartar = encontrarBotaoPorTexto("Descartar");
-            if (btnDescartar) btnDescartar.closest("button").click();
+            await fecharEDescartarModal();
 
             formAberto = false;
           }
@@ -612,14 +924,7 @@ async function iniciarAutomacao() {
         break;
       }
 
-      const btnFecharSucesso =
-        document.querySelector('button[aria-label="Fechar"]') ||
-        document.querySelector('button[aria-label="Dismiss"]');
-      if (btnFecharSucesso) btnFecharSucesso.click();
-      await esperar(1000);
-      const btnConcluido =
-        encontrarBotaoPorTexto("Concluído") || encontrarBotaoPorTexto("Done");
-      if (btnConcluido) btnConcluido.closest("button").click();
+      await fecharModalConfirmacao();
 
       logNoPainel(
         "🛡️ Pausando 4 segundos por segurança antes da próxima...",
